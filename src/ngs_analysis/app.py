@@ -7,6 +7,7 @@ from barcode). See README for details.
 """
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from glob import glob
@@ -92,6 +93,13 @@ def setup():
     # TODO: check that the input files exist
     n = len(load_samples())
     print(f'Found {n} samples in {sample_table}')
+
+    # TODO: check that mmseqs and ngmerge are on path
+    if not shutil.which('mmseqs'):
+        print('Warning: mmseqs not found')
+
+    if not shutil.which('NGmerge'):
+        print('Warning: NGmerge not found')
     
     
 
