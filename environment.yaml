@@ -1,0 +1,19 @@
+name: ngs-analysis
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - fire
+  - glob2
+  - ipykernel
+  - natsort
+  - pandas
+  - pandera
+  - parse
+  - pytables
+  - python-levenshtein
+  - python-slugify
+  - pyyaml
+  - regex
+  - tqdm
+  - pyarrow

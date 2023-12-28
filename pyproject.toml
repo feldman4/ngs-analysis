@@ -1,0 +1,41 @@
+[project]
+name = "ngs-analysis"
+version = "0.0.1"
+description = "Analyze deep sequencing of complex libraries"
+authors = [
+  { name="David Feldman" },
+]
+license = {file = "LICENSE.txt"}
+readme = "README.md"
+requires-python = ">=3.7"
+
+keywords = ["NGS", "library", "variant", "barcode"]
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+  "fire",
+  "joblib",
+  "natsort",
+  "python-slugify",
+  "python-levenshtein",
+  "pandera",
+  "pandas",	
+  "pyyaml",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project.urls]
+"Homepage" = "https://github.com/feldman4/plasmid-design"
+"Bug Tracker" = "https://github.com/feldman4/plasmid-design/issues"
+
+[project.scripts]
+ngs_analysis = "ngs_analysis.app:main"
+
