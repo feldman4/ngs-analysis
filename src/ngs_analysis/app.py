@@ -30,7 +30,7 @@ from .timer import Timer
 # user-provided
 config_yaml = 'config.yaml' # how to parse and compare
 sample_table = 'samples.csv' # NGS samples
-possible_dna_table = 'possible_dna.csv' # designed insert DNA
+reference_dna_table = 'reference_dna.csv' # designed insert DNA
 planned_dna_table = 'planned_dna.csv' # cloning plan
 
 working_directories = '0_paired_reads', '1_reads', '2_parsed', '3_mapped', '3_mapped/map'
@@ -47,7 +47,7 @@ MMSEQS_KMER_DNA = 12
 
 ### TYPES
 # TODO: joint uniqueness
-class PossibleDNA(pa.DataFrameModel):
+class referenceDNA(pa.DataFrameModel):
     subpool: Optional[Series[str]] = pa.Field(nullable=False, coerce=True)
     name: Series[str] = pa.Field(nullable=False, unique=True)
     vector_dna: Series[str] = pa.Field(nullable=False, unique=True)
@@ -65,7 +65,7 @@ class Samples(pa.DataFrameModel):
                                        coerce=True)
 
 
-# build this by using config.yaml to parse PossibleDNA
+# build this by using config.yaml to parse referenceDNA
 class Designs(pa.DataFrameModel):
     subpool: Optional[Series[str]] = pa.Field(nullable=False, coerce=True)
     name: Series[str] = pa.Field(nullable=False, coerce=True)
@@ -79,16 +79,26 @@ class Candidates(pa.DataFrameModel):
 
 
 ### MAIN STEPS
-def setup():
-    print('Creating directories...')
+
+
+def setup(clean=False):
+    
+    if clean:
+        print('Removing working directories...')
+        [shutil.rmtree(d, ignore_errors=True) for d in working_directories]
+
+    print('Creating working directories...')
     [os.makedirs(f'{d}/simulate', exist_ok=True) for d in working_directories]
 
     print('Checking config...')
     # TODO: actual type check for the config
     load_config()
 
-    n = len(load_possible_dna())
-    print(f'Found {n} reference sequences in {possible_dna_table}')
+    n = len(load_reference_dna())
+    print(f'Found {n} reference sequences in {reference_dna_table}')
+
+    print(f'Converting reference sequences to design table...')
+    dna_to_designs()
 
     # TODO: check that the input files exist
     n = len(load_samples())
@@ -101,31 +111,41 @@ def setup():
     if not shutil.which('NGmerge'):
         print('Warning: NGmerge not found')
     
-    
 
-# ok
 def dna_to_designs():
-    """Generate a design table by parsing the possible DNA sequences.
+    """Generate a design table by parsing the reference DNA sequences.
     """
-    df_possible = load_possible_dna()
+    df_reference = load_reference_dna()
     config = load_config()
-    parsed = (parse_sequences(config, df_possible['vector_dna'])
+    parsed = (parse_sequences(config, df_reference['vector_dna'])
      .drop('read_index', axis=1))
-    m, n = len(parsed), len(df_possible)
+    m, n = len(parsed), len(df_reference)
     if m != n:
         raise ValueError(f'failed to parse {n-m}/{n} sequences')
     
-    print(f'Parsed {len(parsed):,} sequences from {possible_dna_table}')
+    print(f'Parsed {len(parsed):,} sequences from {reference_dna_table}')
     describe_parsed(parsed)
 
     pd.concat([
-        df_possible.drop('vector_dna', axis=1),
+        df_reference.drop('vector_dna', axis=1),
         parsed,
     ], axis=1).to_csv(design_table, index=None)
     print(f'Wrote {n:,} rows to {design_table}')
 
-# ok
-def simulate_fastqs(read_lengths: Tuple[int, int]=(300, 300)):
+
+def simulate_single_reads():
+    """Create simulated fastq files based on planned samples.
+    """
+    df_planned = load_planned_dna()
+    os.makedirs('1_reads/simulate', exist_ok=True)
+
+    for sample, df in df_planned.groupby('sample', sort=False):
+        f = f'1_reads/simulate/{sample}.fastq'
+        write_fake_fastq(f, df['vector_dna'])
+        print(f'Wrote {len(df):,} single reads to {f}')
+
+
+def simulate_paired_reads(read_lengths: Tuple[int, int]=(300, 300)):
     """Create simulated fastq files based on planned samples.
 
     :param read_lengths: forward and reverse read lengths
@@ -137,12 +157,12 @@ def simulate_fastqs(read_lengths: Tuple[int, int]=(300, 300)):
         r1 = df['vector_dna'].str[:read_lengths[0]]
         r2 = df['vector_dna'].apply(reverse_complement).str[:read_lengths[1]]
 
-        write_fake_fastq(f'1_reads/simulate/{sample}_R1.fastq', r1)
-        write_fake_fastq(f'1_reads/simulate/{sample}_R2.fastq', r2)
+        write_fake_fastq(f'0_paired_reads/simulate/{sample}_R1.fastq', r1)
+        write_fake_fastq(f'0_paired_reads/simulate/{sample}_R2.fastq', r2)
         print(f'Wrote {len(r1):,} paired reads to '
-              f'1_reads/simulate/{sample}_R[12].fastq')
+              f'0_paired_reads/simulate/{sample}_R[12].fastq')
 
-# ok
+
 def merge_read_pairs(sample, simulate=False):
     """Use NGmerge to merge read pairs.
 
@@ -151,16 +171,19 @@ def merge_read_pairs(sample, simulate=False):
     """
     filenames = get_filenames(sample, simulate=simulate)
     
-    command = (ngmerge, 
+    command = [ngmerge, 
     '-1', filenames['paired_r1'], '-2', filenames['paired_r2'], 
     '-o', filenames['reads'], 
-    '-z', # always gzip output
-    )
+    ]
+    if filenames['paired_r1'].endswith('.gz'):
+        command[-1] += '.gz'
+        command += ['-z'] # gzip output
+
     with Timer(verbose=f'Running ngmerge on sample {sample}...'):
         subprocess.run(command, check=True)
     print(f'Wrote output to {filenames["reads"]}') 
 
-# ok
+
 def parse_reads(sample, simulate=False):
     config = load_config()
     filenames = get_filenames(sample, simulate)
@@ -170,7 +193,7 @@ def parse_reads(sample, simulate=False):
         os.makedirs(os.path.dirname(filenames['parsed']), exist_ok=True)
         parse_sequences(config, reads).to_parquet(filenames['parsed'])
     
-# ok
+
 def map_parsed_reads(sample, simulate=False, mmseqs_max_seqs=10):
     """For each read, find nearest match for the requested fields. 
     
@@ -246,8 +269,11 @@ def load_config():
         return yaml.safe_load(fh)
 
 
-def load_possible_dna() -> PossibleDNA:
-    return pd.read_csv(possible_dna_table).pipe(PossibleDNA)
+def load_reference_dna() -> referenceDNA:
+    return (pd.read_csv(reference_dna_table)
+     .pipe(referenceDNA)
+     .assign(vector_dna=lambda x: x['vector_dna'].str.upper())
+    )
 
 
 def load_planned_dna() -> PlannedDNA:
@@ -378,7 +404,10 @@ def parse_sequences(config, sequences):
             if m:
                 entry[name] = m[0]
         
-        protein_start = re.search(config['protein']['start_at'], insert).start()
+        protein_start = re.search(config['protein']['start_at'], insert)
+        if protein_start is None:
+            continue
+        protein_start = protein_start.start()
         protein = quick_translate(insert[protein_start:])
         protein = protein.split('*')[0]
         entry['cds'] = insert[protein_start:][:len(protein) * 3]
@@ -390,9 +419,9 @@ def parse_sequences(config, sequences):
                     name = name.rstrip('_') # collapse redundant names
                     start, end = match.span(i + 1)
                     entry[name] = entry['cds'][start*3:end*3]
-                arr += [entry]
                 # assert False
                 break
+        arr += [entry]
     if len(arr) == 0:
         raise Exception('Nothing found')
     return pd.DataFrame(arr)
@@ -454,7 +483,7 @@ def get_filenames(sample, simulate=False, field=None):
     to the sample name.
     """
     if simulate:
-        search = f'1_reads/simulate/{sample}_R1'
+        search = f'1_reads/simulate/{sample}'
     else:
         sample_to_fastq = load_samples().set_index('sample')['fastq_name'].to_dict()
         fastq_search = sample_to_fastq[sample]
@@ -465,8 +494,9 @@ def get_filenames(sample, simulate=False, field=None):
         return sum([glob(search + x) for x in extensions], [])
 
     r = search_extensions(search)
-    r1 = search_extensions('paired_' + search + '_R1')
-    r2 = search_extensions('paired_' + search + '_R2')
+    search_paired = search.replace('1_reads', '0_paired_reads')
+    r1 = search_extensions(search_paired + '_R1')
+    r2 = search_extensions(search_paired + '_R2')
     paired_reads_found = len(r1) == 1 & len(r2) == 1
 
     if len(r1) > 1 or len(r2) > 1:
@@ -476,11 +506,13 @@ def get_filenames(sample, simulate=False, field=None):
         raise ValueError(f'Too many read files for sample {sample}, found: {r}')
 
     if not (paired_reads_found or len(r) == 1):
-        raise ValueError(f'Neither reads nor paired reads provided for sample {sample}, searched with: {search}')
+        raise ValueError(
+            f'Neither paired reads nor single reads provided for sample {sample}, searched with:'
+            f'\n{search_paired}\n{search}')
 
     add_simulate = 'simulate/' if simulate else ''
     filenames = {
-        'reads': f'1_reads/{add_simulate}{sample}.fastq.gz',
+        'reads': f'1_reads/{add_simulate}{sample}.fastq',
         'parsed': f'2_parsed/{add_simulate}{sample}.parsed.pq',
         'mapped': f'3_mapped/{add_simulate}{sample}.mapped.csv',
     }
@@ -700,7 +732,7 @@ if __name__ == '__main__':
     commands = [
         'setup',
         'dna_to_designs', 
-        'simulate_fastqs', 
+        'simulate_paired_reads', 
         'merge_read_pairs', 
         'parse_reads',
         'map_parsed_reads',

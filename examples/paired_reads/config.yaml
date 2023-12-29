@@ -1,0 +1,32 @@
+# 1. match the insert DNA
+left_adapter:  GATATACC # before MGS
+right_adapter: CTCGAGCA # after barcode
+
+# 2. use regular expression to capture a part from the 
+#    insert DNA (adapters are removed)
+dna_parts:
+ barcode: GTTACCGGTATCTCGCTTGC(.*)$ # between spacer and right adapter
+    
+# 3. translate protein from the insert DNA, beginning where the
+#    "start_at" regular expression matches
+# 4. capture protein parts that adhere to one of the listed patterns, 
+#    as defined by the "capture" regular expressions
+protein:
+  start_at: ^ATG # translation start
+  patterns: 
+    - 'MGSS{Hisx6}{GS_linker}{minibinder}' # N term tag
+    - 'MGS{minibinder}{GS_linker}{Hisx6}' # C term tag
+  capture:
+    Hisx6: 'HHHHHH' # greedy capture
+    GS_linker: '[GS]{3,}' # 3 or more G or S
+    minibinder: '.*' # any amino acid sequence
+
+# list part names to compare to reference
+# use the "_aa" suffix to compare protein translations
+# the format "barcode -> minibinder_aa" means first match by
+# barcode, then compare the corresponding minibinder in the 
+# reference to the parsed minibinder sequence
+compare:
+  - barcode
+  - minibinder_aa
+  - barcode -> minibinder_aa

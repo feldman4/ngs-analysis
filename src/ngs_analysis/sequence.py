@@ -75,8 +75,12 @@ def write_fasta(filename, list_or_records):
 
 
 def write_fake_fastq(filename, list_or_records):
-    with open(filename, 'w') as fh:
-        fh.write(format_fake_fastq(list_or_records))
+    if filename.endswith('.gz'):
+        fh = gzip.open(filename, 'wt')
+    else:
+        fh = open(filename, 'w')
+    fh.write(format_fake_fastq(list_or_records))
+    fh.close()
 
 
 def format_fake_fastq(list_or_records):
