@@ -82,6 +82,13 @@ class Candidates(pa.DataFrameModel):
 
 
 def setup(clean=False):
+    """Setup analysis directory. 
+    
+    Create working directories; check config, reference_dna.csv, 
+    and samples.csv; check NGmerge and mmseqs executables.
+
+    :param clean: whether to remove existing working directories
+    """
     
     if clean:
         print('Removing working directories...')
