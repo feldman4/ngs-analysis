@@ -725,9 +725,7 @@ def load_fastmap(filename):
             arr += [{'query': name, 'match': x}]
     return pd.DataFrame(arr)
 
-
-if __name__ == '__main__':
-
+def main():
     # order is preserved
     commands = [
         'setup',
@@ -755,3 +753,5 @@ if __name__ == '__main__':
         pass
     
 
+if __name__ == '__main__':
+    main()
