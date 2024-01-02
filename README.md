@@ -1,6 +1,6 @@
 # ngs-analysis
 
-Intended for analysis of sequencing reads that span multiple DNA or protein parts. For instance, given a library of protein variants linked to DNA barcodes, it can answer questions like:
+Convenient analysis of sequencing reads that span multiple DNA or protein parts. For instance, given a library of protein variants linked to DNA barcodes, this tool can answer questions like:
 
 - How accurate are the variant sequences, at the DNA or protein level?
 - How frequently is the same barcode linked to two different variants?
@@ -17,16 +17,15 @@ It’s been tested with Illumina paired-end reads and Oxford Nanopore long reads
 
 # Workflow
 
-A simple example with two reference sequences, each consisting of a variant linked to a barcode:
+A cartoon example with two reference sequences, each consisting of a variant linked to a barcode:
 
 <img src="examples/sequences.png" alt="sequences" width="400"/>
 
-Here's the analysis workflow:
+Here's the analysis workflow and outputs:
 
 <img src="examples/workflow.png" alt="analysis workflow" width="400"/>
 
 Check out the [example notebook for paired end reads](examples/paired_reads/paired_read_example.ipynb) for details.
-
 
 ### **TL;DR**
 
