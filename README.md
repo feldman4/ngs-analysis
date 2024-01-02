@@ -49,5 +49,7 @@ Run `ngs-analysis --help` to see available commands.
 pip install ngs-analysis
 ```
 
+Make sure that the `mmseqs` and `NGmerge` executables are available (NGmerge only needed for paired reads).
+
 Tested on Linux and MacOS (Apple Silicon).
 
