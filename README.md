@@ -19,11 +19,11 @@ It’s been tested with Illumina paired-end reads and Oxford Nanopore long reads
 
 A cartoon example with two reference sequences, each consisting of a variant linked to a barcode:
 
-<img src="examples/sequences.png" alt="sequences" width="400"/>
+<img src="examples/sequences.png" alt="sequences" width="500"/>
 
 Here's the analysis workflow and outputs:
 
-<img src="examples/workflow.png" alt="analysis workflow" width="400"/>
+<img src="examples/workflow.png" alt="analysis workflow" width="500"/>
 
 Note that in the last two columns, the parsed variant is mapped to a reference variant defined by the barcode present in the same read, rather than all possible reference variants. Check out the [example notebook for paired end reads](examples/paired_reads/paired_read_example.ipynb) for details.
 
