@@ -15,7 +15,35 @@ This kind of analysis often involves parsing raw sequencing reads for DNA and/or
 
 It’s been tested with Illumina paired-end reads and Oxford Nanopore long reads. Under the hood it uses [NGmerge](https://github.com/jsh58/NGmerge) to merge paired reads and [MMseqs2](https://github.com/soedinglab/MMseqs2) for sequencing mapping. It is moderately performant: 1 million paired-end reads can be mapped to a reference of 100,000 variant-barcode pairs in ~1 minute.
 
-# Installation
+# Workflow
+
+A simple example with two reference sequences, each consisting of a variant linked to a barcode:
+
+<img src="examples/sequences.png" alt="sequences" width="400"/>
+
+Here's the analysis workflow:
+
+<img src="examples/workflow.png" alt="analysis workflow" width="400"/>
+
+Check out the [example notebook for paired end reads](examples/paired_reads/paired_read_example.ipynb) for details.
+
+
+### **TL;DR**
+
+Run `ngs-analysis --help` to see available commands.
+
+1. Make an empty directory, add `config.yaml` and `samples.csv` based on the example.
+2. Add `reference_dna.csv` with anticipated DNA sequences (including adapters).
+3. Run `ngs-analysis setup`. Add `--clean` to start the analysis from scratch.
+4. Run `ngs-analysis dna_to_designs`. Check that `designs.csv` is accurate; if not, fix `config.yaml`.
+5. 
+    - If you have paired-end data, put it in `0_paired_reads/` and run `ngs-analysis merge_read_pairs <sample>`.
+    - If you have single-end data (e.g., nanopore), put it in `1_reads/`.
+6. Run `ngs-analysis parse_reads <sample>`. Check that `2_parsed/<sample>.parsed.pq` looks alright (with pandas, use `pd.read_parquet`)
+7. Run `ngs-analysis map_parsed_reads <sample>`. Results are in `3_mapped/<sample>.mapped.csv`
+
+
+# Install
 
 ```bash
 pip install ngs-analysis

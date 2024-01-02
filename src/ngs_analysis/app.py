@@ -192,6 +192,11 @@ def merge_read_pairs(sample, simulate=False):
 
 
 def parse_reads(sample, simulate=False):
+    """Find DNA and protein parts within (merged) reads.
+
+    :param sample: sample name
+    :param simulate: if True, use ./*/simulate/ subdirectories
+    """
     config = load_config()
     filenames = get_filenames(sample, simulate)
     with Timer('', verbose='Loading reads...'):
