@@ -48,7 +48,7 @@ Run `ngs-analysis --help` to see available commands.
 pip install ngs-analysis
 ```
 
-Make sure that the `mmseqs` and `NGmerge` executables are available (NGmerge is only needed for paired reads).
+Make sure that the `mmseqs` and `NGmerge` executables are available (NGmerge is only needed for paired reads). On Linux and Intel-based MacOS they can be installed via Conda or Micromamba with `conda install -c bioconda mmseqs2 ngmerge`. On Apple Silicon `mmseqs` can be installed via Homebrew with `brew install mmseqs2`, and NGmerge can be installed [from source](https://github.com/jsh58/NGmerge?tab=readme-ov-file#compile), or via `brew install brewsci/bio/ngmerge`.
 
 Tested on Linux and MacOS (Apple Silicon).
 
