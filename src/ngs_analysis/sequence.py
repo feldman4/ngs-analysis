@@ -1,6 +1,4 @@
 import gzip
-import os
-import re
 from collections import defaultdict
 from glob import glob
 
@@ -8,7 +6,7 @@ import numpy as np
 import pandas as pd
 from natsort import natsorted
 
-from .constants import RESOURCES, CODONS, CODONS_REVERSE
+from .constants import CODONS, CODONS_REVERSE
 
 
 watson_crick = {'A': 'T',
@@ -175,23 +173,6 @@ def translate_dna(s):
     return ''.join([CODONS[s[i*3:(i+1)*3]] for i in range(int(len(s)/3))])
 
 
-def load_codons(organism):
-    f = os.path.join(RESOURCES, 'codon_usage', 'organisms.csv')
-    taxids = pd.read_csv(f).set_index('organism')['taxid'].to_dict()
-    
-    if organism.lower() == 'yeast':
-        organism = 's_cerevisiae'
-    organism = organism.lower().replace('.', '').replace(' ', '_')
-    
-    try:
-        table = f'{organism}_{taxids[organism]}.csv'
-    except KeyError:
-        raise ValueError(f'{organism} must be one of {list(taxids.keys())}')
-    f = os.path.join(RESOURCES, 'codon_usage', table)
-    return (pd.read_csv(f)
-            .assign(codon_dna=lambda x: x['codon'].str.replace('U', 'T')))
-
-
 def make_equivalent_codons(dna_to_aa):
     """Make dictionary from codon to other codons for the same amino acid
     """
@@ -213,154 +194,6 @@ equivalent_codons = make_equivalent_codons(CODONS)
 def reverse_complement(seq):
     return ''.join(watson_crick[x] for x in seq)[::-1]
 
-
-def sanger_database(drive):
-    df_sanger = drive.get_excel('cloning/sanger')
-
-    extra_cols = [x for x in df_sanger.columns
-                  if x not in ('identifier', 'search')]
-
-    arr = []
-    for _, row in df_sanger.iterrows():
-        files = natsorted(glob(row['search']))
-        if len(files) == 0:
-            print(f'No files found from row {row.to_dict()}')
-            continue
-        (pd.DataFrame({'file': files})
-         .assign(**{x: row[x] for x in extra_cols})
-         .assign(name=lambda x: x['file'].str.extract(row['identifier']))
-         .assign(seq=lambda x: x['file'].apply(read_ab1))
-         .assign(seq_rc=lambda x: x['seq'].apply(reverse_complement))
-         .pipe(arr.append)
-         )
-
-    cols = extra_cols + ['name', 'file', 'seq', 'seq_rc']
-    return pd.concat(arr)[cols]
-
-
-def read_ab1(f):
-    from Bio import SeqIO
-    with open(f, 'rb') as fh:
-        records = list(SeqIO.parse(fh, 'abi'))
-        assert len(records) == 1
-        seq = str(records[0].seq)
-    return seq
-
-
-def print_alignment(a, b, width=60, as_string=False):
-    """Levenshtein alignment.
-    """
-    import edlib
-    alignment = edlib.align(a, b, task='path')
-    d = edlib.getNiceAlignment(alignment, a, b)
-    lines = []
-    for i in range(0, max(map(len, d.values())), width):
-        lines += [str(i)]
-        for x in d.values():
-            lines += [x[i:i+width]]
-
-    txt = '\n'.join(lines)
-    if as_string:
-        return txt
-    else:
-        print(txt)
-
-
-def reverse_translate_max(aa_seq, organism='e_coli'):
-    if organism not in codon_maps:
-        codon_maps[organism] = (load_codons(organism)
-        .sort_values('relative_frequency', ascending=False)
-        .drop_duplicates('amino_acid')
-        .set_index('amino_acid')['codon_dna'].to_dict()
-        ) 
-    codon_map = codon_maps[organism]
-    return ''.join([codon_map[x] for x in aa_seq])
-
-
-def reverse_translate_random(aa_seq, organism='e_coli', rs='input', cutoff=0.12):
-    if rs == 'input':
-        seed = hash(aa_seq) % 10**8
-        rs = np.random.RandomState(seed=seed)
-    if (organism, cutoff) not in codon_maps:
-        codon_maps[(organism, cutoff)] = (load_codons(organism)
-        .query('relative_frequency > @cutoff')
-        .groupby('amino_acid')['codon_dna'].apply(list).to_dict()
-        )
-    codon_map = codon_maps[(organism, cutoff)]
-    return ''.join([rs.choice(codon_map[x]) for x in aa_seq])
-
-
-def get_genbank_features(f, error_on_repeat=True):
-    from Bio import SeqIO
-    records = list(SeqIO.parse(open(f,'r'), 'genbank'))
-    if len(records) != 1:
-        raise ValueError(f'found {len(records)} records in genbank {f}')
-
-    features = {}
-    for f in records[0].features:
-        label = f.qualifiers['label'][0]
-        seq = f.extract(records[0].seq)
-        if label in features and features[label] != seq and error_on_repeat:
-            raise ValueError(f'repeated feature {label}')
-        features[label] = str(seq)
-    return features
-
-
-def rolling_gc(seq, window):
-    from scipy.ndimage.filters import convolve
-    gc_window = 20
-    return convolve(np.array([x in 'GC' for x in seq])*1., 
-                          np.ones(window)/window, 
-                          mode='reflect')
-
-
-def to_codons(seq):
-    assert len(seq) % 3 == 0
-    return [seq[i*3:(i+1)*3] for i in range(int(len(seq)/3))]
-
-
-def codon_adaptation_index(seq, organism='e_coli'):
-    return (load_codons(organism)
-        .assign(w=lambda x: x.groupby('amino_acid')['relative_frequency']
-                .transform(lambda y: y / y.max()))
-        .set_index('codon_dna')
-        .loc[to_codons(seq)]['w']
-        .pipe(lambda x: np.prod(x)**(1/len(x)))
-           )
-
-
-def compare_sequences(sequences, window=25, k=6):
-    import matplotlib.pyplot as plt
-
-    fig, (ax0, ax1) = plt.subplots(figsize=(12, 4), ncols=2)
-    for name in sequences:
-        cai = codon_adaptation_index(sequences[name])
-        mean_gc = np.mean([x in 'GC' for x in sequences[name]])
-        gc_trace = rolling_gc(sequences[name], window)
-        label = f'{name}: avg={mean_gc:.2g} std={np.std(gc_trace):.2g} cai={cai:.2g}'
-        ax0.plot(gc_trace, label=label)
-    
-        (pd.Series(get_kmers(sequences[name], k))
-         .value_counts().value_counts().sort_index()
-         .pipe(lambda x: x/x.sum())
-         .plot(ax=ax1, marker='.', ms=10, label=name))
-        
-    
-    ax0.plot([0, len(gc_trace)], [0.5, 0.5], color='gray', lw=1, ls='--', zorder=-1)
-    ax0.legend()
-    ax0.set_title(f'average GC content over {window} nt window')
-    ax0.set_ylabel('GC fraction')
-    ax0.set_xlabel('DNA sequence position')
-    ax0.set_ylim([0.25, 0.85])
-    ax0.set_xlim([0, len(gc_trace)])
-    
-    ax1.set_title(f'repeated kmers with k={k}')
-    ax1.set_xlabel('kmer count')
-    ax1.set_ylabel(f'fraction of kmers')
-    ax1.set_xticks([1,2,3,4,5])
-    ax1.legend()
-
-    return fig
 
 
 def get_kmers(s, k):
@@ -552,56 +385,11 @@ def match_and_check(queries, reference, window, k, ignore_above=40, progress=lam
     return df_matched
 
 
-def load_abi_zip(filename):
-    """Extract Bio.SeqIO records from sanger zip file.
-    """
-    import zipfile
-    from io import BytesIO
-
-    from Bio import SeqIO
-    zh = zipfile.ZipFile(filename, 'r')
-    arr = []
-    for zi in zh.filelist:
-        if not zi.filename.endswith('ab1'):
-            print(f'Skipping {zi.filename}')
-            continue
-        fh = zh.open(zi.filename, 'r')
-        buffer = BytesIO(fh.read())
-        arr += [SeqIO.read(buffer, 'abi')]
-    return arr
-
-
-def get_abi_traces(abi_record):
-    channels = 'DATA9', 'DATA10', 'DATA11', 'DATA12'
-    bases = list('GATC')
-    traces = np.array([abi_record.annotations['abif_raw'][c]
-                       for c in channels])
-    df = pd.DataFrame(traces).T
-    df.columns = bases
-    return df
-
-
 def try_translate_dna(s):
     try:
         return translate_dna(s)
     except:
         return None
-
-
-def digest_protein_fasta(filename, digest_pat='[R|K]'):
-    """Convert protein fasta into a table of peptides, digesting with provided regex.
-    """
-    records = read_fasta(filename)
-
-    arr = []
-    for name, seq in records:
-        parts = re.split(f'({digest_pat})', seq)
-        parts = [x for x in parts if x]
-        peptides = [a+b for a,b in zip(parts[::2], parts[1::2])]
-        for peptide in peptides:
-            arr += [{'name': name, 'sequence': peptide}]
-
-    return pd.DataFrame(arr)
 
 
 def findone(aa, dna):
@@ -625,85 +413,6 @@ def select_most_different(xs, n):
     return arr
 
 
-def edge_primers(dna, melt_temp): 
-    from Bio.SeqUtils.MeltingTemp import Tm_NN
-    dna_rev = reverse_complement(dna)
-
-    fwd = dna[:10]
-    while Tm_NN(fwd) < melt_temp:
-        fwd = dna[:len(fwd) + 1]
-        
-    rev = dna_rev[:10]
-    while Tm_NN(rev) < melt_temp:
-        rev = dna_rev[:len(rev) + 1]
-        
-    return fwd, rev
-
-
-def find_orfs(seq, kozak='GCCACC', return_aa=True):
-    """Find open reading frames starting with kozak in circular 
-    DNA sequence.
-    """
-    plasmid = str(seq)
-    pat = f'{kozak}(ATG(?:...)*?)(?:TAA|TAG|TGA)'
-    ref = plasmid + plasmid
-    orfs = re.findall(pat, ref) + re.findall(pat, reverse_complement(ref))
-    if return_aa:
-        orfs = [translate_dna(x) for x in orfs]
-    return sorted(set(orfs), key=lambda x: -1 * len(x))
-
-
-def find_longest_orf(dna, kozak='GCCACC'):
-    pat = f'{kozak}(ATG(?:...)*?)(?:TAA|TGA|TAG)'
-    orfs = re.findall(pat, dna.upper())
-    if orfs:
-        return sorted(orfs, key=len)[-1]
-
-
-def add_features(record, features):
-    """Add features to `record` based on name=>DNA dictionary `features`.
-    A feature with "orf" in the name is given a special annotation that 
-    shows up as a translation in benchling.
-    """
-
-    vector = str(record.seq).upper()
-
-    n = len(vector)
-
-    features = dict(features)
-    arr = []
-    for name, feature in features.items():
-        feature = feature.upper()
-        m = len(feature)
-
-        for strand in (-1, 1):
-            key = reverse_complement(feature) if strand == -1 else feature
-            starts = [x.start() for x in re.finditer(key, vector * 2)] 
-            starts = [x for x in starts if x < n]
-            for start in starts:
-                end = start + m
-                qualifiers = dict(label=name)
-                feature_type = 'misc'
-                if 'orf' in name:
-                    feature_type = 'CDS'
-                    qualifiers['translation'] = translate_dna(key) + '*'
-                    end += strand * 3
-
-                if end < n:
-                    location = FeatureLocation(start, end, strand=strand)
-                else:
-                    f1 = FeatureLocation(start, n, strand=strand)
-                    f2 = FeatureLocation(0, end % n, strand=strand)
-                    location = f1 + f2
-                arr += [SeqFeature(location, type=feature_type, qualifiers=qualifiers)]
-
-    # copies features but not annotations
-    new_record = record[:]
-    new_record.annotations = record.annotations
-    new_record.features += arr
-    return new_record
-
-
 def translate_to_stop(x):
     if not isinstance(x, str):
         return
@@ -715,121 +424,9 @@ def translate_to_stop(x):
     return
 
 
-def ion_plasmid_integration(filename):
-    """Generate plasmid map after integration for an iON vector
-    :param filename: iON vector genbank
-    """
-    left_itr = 'CCCTAGAAAGATAGTCTGCGTAAAATTGACGCATG'.upper()
-    right_itr = 'ccctagaaagataatcatattgtgacgtacgttaaagataatcatgcgtaaaattgacgcatg'.upper()
-
-    record = list(SeqIO.parse(filename, 'genbank'))[0]
-    original_features = get_genbank_features(filename, error_on_repeat=False)
-    # remove annoying small features
-    original_features = {k: v for k,v in original_features.items() if 6 < len(v)}
-    
-    dna = str(record.seq)
-    start = dna * 2
-    # in iON figure 1A notation
-    # partial, one, two, one, partial
-    _, one, two, _, _ = split_by_regex(f'{left_itr}|{right_itr}', start, keep='prefix')
-
-    # deduplicate
-    one, two = ['AA' + x[:-2] for x in (one, two)]
-    result = two + reverse_complement(one)
-    
-    result_record = SeqRecord(Seq(result), name=record.name + '_integrated', 
-                              annotations={'molecule_type': 'DNA'})    
-    result_record = add_features(result_record, original_features)
-    
-    return result_record
-
-
-def remove_restriction_sites(dna, sites, rs):
-    codon_sequence = to_codons(dna)
-    sites = set(sites)
-    for site in list(sites):
-        sites.add(reverse_complement(site))
-
-    for site in sites:
-        width = len(site)
-        dna = ''.join(codon_sequence)
-        if site not in dna:
-            continue
-
-        for i in range(len(dna)):
-            # if we encounter a restriction site
-            if dna[i:i + len(site)] == site:
-                # change any of these codons
-                overlapped_codons = sorted(
-                    set([int((i + offset) / 3) for offset in range(width)]))
-                # accept first change that removes restriction site
-                for j in overlapped_codons:
-                    # change this codon
-                    new_codon = swap_codon(codon_sequence[j], rs)
-                    local_dna = ''.join([new_codon if k == j else codon_sequence[k]
-                                         for k in overlapped_codons])
-                    # if codon removes this site, keep it
-                    if site not in local_dna:
-                        codon_sequence = codon_sequence[:j] + \
-                            [new_codon] + codon_sequence[j + 1:]
-                        break
-    dna = ''.join(codon_sequence)
-    for site in sites:
-        assert site not in dna
-            
-    return dna
-
-
-def restriction_sites_in_dna(dna, sites):
-    sites = set(list(sites) + [reverse_complement(x) for x in sites])
-    for site in sites:
-        if site in dna:
-            return True
-    return False
-
-
 def to_codons(dna):
     assert len(dna) % 3 == 0
     return [dna[i * 3:(i + 1) * 3] for i in range(int(len(dna) / 3))]
-
-
-def swap_codon(codon, rs):
-    """Swap codon at random, if possible.
-    """
-    options = equivalent_codons[codon]
-    if not options:
-        return codon
-    return rs.choice(options)
-
-
-def remove_restriction_sites_dnachisel(cds, avoid, rs=None):
-    if not restriction_sites_in_dna(cds, avoid):
-        return cds
-
-    import dnachisel as dc
-    
-    if rs is None:
-        np.random.seed(0)
-    else:
-        np.random.seed(int(1e9*rs.rand()))
-        
-    n = len(cds)
-
-    constraints = [dc.AvoidPattern(x, location=0) for x in avoid]
-    constraints += [dc.EnforceTranslation(location=(0, n))]
-
-    problem = dc.DnaOptimizationProblem(
-        sequence=cds,
-        constraints=constraints,
-        objectives=[dc.AvoidChanges()], 
-        logger=None
-    )
-    problem.max_iters = 50
-    problem.resolve_constraints()
-    problem.optimize()
-    
-    assert not restriction_sites_in_dna(problem.sequence, avoid)
-    return problem.sequence
 
 
 def pairwise_levenshtein(seqs):
@@ -845,44 +442,6 @@ def pairwise_levenshtein(seqs):
     i, j, d = zip(*arr)
     D[i, j] = d
     return D + D.T
-
-
-def generate_adapters(priming_length=12, enzyme='BsmBI', tm_range=2, target_GC=0.5,
-                      max_calculate=10_000, num_sample=100_000, distance_threshold=6, seed=0):
-    """Tm is calculated for priming site plus restriction site. A target Tm is defined
-    based on the average of sequences within 10% of target_GC.
-    """
-    from Levenshtein import distance
-    from scipy.sparse import csr_matrix
-    from .utils import maxy_clique_groups
-    from Bio.SeqUtils import MeltingTemp as mt
-
-    enzymes = {'BsmBI': 'CGTCTC'}
-    site = enzymes[enzyme]
-    avoid = 'AAA', 'GGG', 'CCC', 'TTT', site, reverse_complement(site)
-    rs = np.random.RandomState(seed)
-    candidates = [''.join(x) for x in rs.choice(list('ACTG'), size=(num_sample, priming_length))]
-    candidates = [x for x in candidates if not any(y in x for y in avoid)]
-
-    df_adapters = pd.DataFrame({'sequence': candidates})
-
-    df_adapters['Tm'] = (df_adapters['sequence'] + site).apply(mt.Tm_NN)
-    df_adapters['GC'] = df_adapters['sequence'].str.count('G|C') / df_adapters['sequence'].str.len()
-
-    mean_tm = df_adapters.query('abs(GC - @target_GC) < 0.1')['Tm'].mean()
-    df_adapters = df_adapters.query('abs(Tm - @mean_tm) < @tm_range/2')
-    
-    seqs = df_adapters['sequence'][:max_calculate]
-    print(f'Calculating pairwise distances for {len(seqs):,} priming sites')
-    D = pairwise_levenshtein(seqs)
-    
-    print(f'Selecting priming sites with pairwise distance >= {distance_threshold}')
-    
-    A = distance_threshold <= D
-    cm = csr_matrix(1-A, shape=A.shape)
-    centers = np.array(maxy_clique_groups(cm, [1] * A.shape[0]))
-    
-    return df_adapters['sequence'].iloc[centers].pipe(list)
 
 
 def kmers_unique(s, k):
@@ -912,8 +471,9 @@ def find_aa_in_dna(aa, dna):
     return dna[i * 3:(i + len(aa)) * 3]
 
 
-def sequence_sap_score(x):
-    """Sum of SAP weights for all residues, regardless of solvent exposure.
-    """
-    from .ppi.constants import SAP_WEIGHTS
-    return sum([SAP_WEIGHTS[aa] for aa in x])
+def quick_translate(seq):
+    # return str(quickdna.DnaSequence(seq).translate())
+    n = len(seq) - len(seq) % 3
+    return translate_dna(seq[:n])
+
+    

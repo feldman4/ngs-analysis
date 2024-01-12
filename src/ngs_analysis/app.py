@@ -1,11 +1,10 @@
-"""Analyze sequencing reads and compare Dna and protein parts to a reference.
+"""Analyze sequencing reads and compare DNA and protein parts to a reference.
 
 Pattern-matching is used to define parts (e.g., designs, 
 variable linkers, fixed sequences, and barcodes). Identified parts can be 
 mapped to inferred reference sequences (e.g., design inferred 
 from barcode). See README for details.
 """
-import io
 import os
 import re
 import shutil
@@ -13,81 +12,21 @@ import subprocess
 import tempfile
 from glob import glob
 from subprocess import DEVNULL
-from typing import Optional, Tuple
+from typing import Tuple
 
 import fire
 import Levenshtein
 import numpy as np
 import pandas as pd
-import pandera as pa
-import yaml
-from pandera.typing import Series
 
 # import quickdna
+from .constants import *
 from .sequence import (read_fasta, read_fastq, reverse_complement,
-                       translate_dna, write_fake_fastq, write_fasta)
+                       write_fake_fastq, write_fasta)
 from .timer import Timer
+from .types import *
 from .utils import assert_unique, nglob, sample_at_coverage
-
-# user-provided
-config_yaml = 'config.yaml' # how to parse and compare
-sample_table = 'samples.csv' # NGS samples
-reference_dna_table = 'reference_dna.csv' # designed insert DNA
-sample_plan_table = 'sample_plan.csv' # cloning plan
-
-working_directories = '0_paired_reads', '1_reads', '2_parsed', '3_mapped', '3_mapped/map'
-
-# generated or provided
-design_table = 'designs.csv' # designed DNA or protein parts
-
-ngmerge = 'NGmerge'
-bwa = 'bwa'
-mmseqs = 'mmseqs'
-
-MMSEQS_KMER_AA = 6
-MMSEQS_KMER_DNA = 12
-
-### TYPES
-# TODO: joint uniqueness, DNA characters
-# currently handled in load_reference_dna
-class ReferenceDna(pa.DataFrameModel):
-    source: Optional[Series[str]] = pa.Field(nullable=False, coerce=True)
-    name: Series[str] = pa.Field(nullable=False, unique=True)
-    reference_dna: Series[str] = pa.Field(nullable=False, unique=True)
-
-
-# simulate based on reference sources
-# could also be used to generate comparison of expected vs actual results 
-class SamplePlan(pa.DataFrameModel):
-    sample: Series[str] = pa.Field(nullable=False, coerce=True)
-    source: Optional[Series[str]] = pa.Field(nullable=False, coerce=True)
-    coverage: Optional[Series[float]] = pa.Field(nullable=False)
-
-
-# simulate based on input sequences
-class DnaPlan(pa.DataFrameModel):
-    sample: Series[str] = pa.Field(nullable=False, coerce=True)
-    reference_dna: Series[str] = pa.Field(nullable=False, unique=True)
-
-
-class Samples(pa.DataFrameModel):
-    sample: Series[str] = pa.Field(nullable=False, unique=True, 
-                                   coerce=True)
-    fastq_name: Series[str] = pa.Field(nullable=False, unique=True, 
-                                       coerce=True)
-
-
-# build this by using config.yaml to parse ReferenceDna
-class Designs(pa.DataFrameModel):
-    source: Optional[Series[str]] = pa.Field(nullable=False, coerce=True)
-    name: Series[str] = pa.Field(nullable=False, coerce=True)
-
-
-class Candidates(pa.DataFrameModel):
-    read_index: Series[int] = pa.Field(nullable=False)
-    query: Series[str] = pa.Field(nullable=False)
-    reference: Series[str] = pa.Field(nullable=False)
-    reference_name: Series[str] = pa.Field(nullable=False)
+from .load import *
 
 
 ### MAIN STEPS
@@ -132,7 +71,7 @@ def setup(clean=False):
     
 
 def dna_to_designs():
-    """Generate a design table by parsing the reference Dna sequences.
+    """Generate a design table by parsing the reference DNA sequences.
     """
     df_reference = load_reference_dna()
     config = load_config()
@@ -178,21 +117,25 @@ def simulate_single_reads(mutations_per_read: int=0, coverage=None):
         print(f'Wrote {len(reads):,} single reads to {f}')
 
 
+def clear_simulation():
+    files = glob('*/simulate/*')
+    [os.remove(x) for x in files]
+
+
 def simulate_paired_reads(read_lengths: Tuple[int, int]=(300, 300), 
         mutations_per_read: int=0, coverage=None):
     """Create simulated fastq files based on planned samples.
 
     :param read_lengths: forward and reverse read lengths
     """
-    df_planned = load_sample_plan()
     df_reference = load_reference_dna()
-    df = df_planned.merge(df_reference, how='left')
-    if 'coverage' not in df:
-        df['coverage'] = coverage
+    df_planned = load_sample_plan().merge(df_reference, how='left')
+    if 'coverage' not in df_planned:
+        df_planned['coverage'] = coverage
 
     create_directories()
 
-    it = df.groupby(['sample', 'coverage'], sort=False, dropna=False)
+    it = df_planned.groupby(['sample', 'coverage'], sort=False, dropna=False)
     for (sample, coverage), df in it:
         r1 = df['reference_dna'].str[:read_lengths[0]]
         r2 = df['reference_dna'].apply(reverse_complement).str[:read_lengths[1]]
@@ -321,68 +264,6 @@ def map_parsed_reads(sample, simulate=False, mmseqs_max_seqs=10):
     print(f'Wrote match table ({len(df_match):,} rows) to {filenames["mapped"]}')
 
 
-### LOAD
-
-
-def load_config():
-    with open(config_yaml, 'r') as fh:
-        return yaml.safe_load(fh)
-
-
-def load_reference_dna() -> ReferenceDna:
-    return (pd.read_csv(reference_dna_table)
-     .pipe(ReferenceDna)
-     .assign(reference_dna=lambda x: x['reference_dna'].str.upper())
-     .pipe(assert_unique, 'name')
-     .pipe(assert_unique, 'reference_dna')
-    )
-
-
-def load_sample_plan() -> SamplePlan:
-    df = pd.read_csv(sample_plan_table).pipe(SamplePlan)
-    if 'source' in df:
-        cols = pd.read_csv(reference_dna_table, nrows=1).columns
-        if 'source' not in cols:
-            raise ValueError('Sample plan has source column but reference does not')
-    # TODO: check that samples are in samples.csv
-    return df
-
-
-def load_samples() -> Samples:
-    return pd.read_csv(sample_table).pipe(Samples)
-
-
-def load_designs() -> Designs:
-    """Add translations that are needed for comparison but not already present.
-    """
-    df_designs = pd.read_csv(design_table)
-    fields, _ = get_comparison_fields()
-    for field in fields:
-        if field.endswith('_aa') and field[:-3] in df_designs:
-            if field in df_designs:
-                raise ValueError(f'Cannot provide both Dna and amino acid for {field}')
-            df_designs[field] = [quick_translate(x) for x in df_designs[field[:-3]]]
-        elif field not in df_designs:
-            raise ValueError(f'Cannot derive {field} from design table')
-    return df_designs.pipe(Designs)
-
-
-def load_seqs_to_map(sample, simulate, field):
-    filenames = get_filenames(sample, simulate, field)
-
-    aa = field.endswith('_aa')
-    field_no_aa = field[:-3] if aa else field
-
-    seqs_to_map = (pd.read_parquet(filenames['parsed'], columns=['read_index', field_no_aa])
-     .rename(columns={field_no_aa: 'query'})
-     .dropna()
-    )
-    if aa:
-        seqs_to_map['query'] = [quick_translate(x) for x in seqs_to_map['query']]
-
-    return seqs_to_map
-
-
 ### UTILITIES
 
 
@@ -402,16 +283,10 @@ def describe_parsed(df_parsed):
     to_string = lambda x: '    ' + x.to_string().replace('\n', '\n    ')
     print('Null entries:')
     print(null_summary.pipe(to_string))
-    print('Dna length:')
+    print('DNA length:')
     print(dna_length.pipe(describe).pipe(to_string))
     print('Protein length:')
     print(aa_length.pipe(describe).pipe(to_string))
-
-
-def quick_translate(seq):
-    # return str(quickdna.DnaSequence(seq).translate())
-    n = len(seq) - len(seq) % 3
-    return translate_dna(seq[:n])
 
 
 def format_string_to_capture_regex(x, optional=[], **kwargs):
@@ -423,34 +298,16 @@ def format_string_to_capture_regex(x, optional=[], **kwargs):
     return formatted_string
 
 
-def get_comparison_fields():
-    """Parse fields for direct matching and field pairs for inferred matching.
-    """
-    direct_match, inferred_match = set(), set()
-    config = load_config()
-    for c in config['compare']:
-        if '->' in c:
-            a, b = [x.strip() for x in c.split('->')]
-            direct_match |= {a}
-            inferred_match |= {(a, b)}
-        else:
-            direct_match |= {c.strip()}
-
-    return direct_match, inferred_match
-
-
 def parse_sequences(config, sequences):
-    """Match Dna sequence based on pattern config.
+    """Match DNA sequence based on pattern config.
     First, the sequence between left_adapter and right_adapter is extracted.
-    Then, any Dna parts are matched.
+    Then, any DNA parts are matched.
     Then, a protein is translated starting at the position matched by the pattern 
     in config.protein.start_at using `translate_to_stop`.
     Finally, the protein is matched using the template string protein.pattern,
-    and named matches are added to the result dictionary. Only Dna is stored here.
+    and named matches are added to the result dictionary. Only DNA is stored here.
     """
     re_insert = re.compile('{left_adapter}(.*){right_adapter}'.format(**config))
-    import os
-    os.wtf = re_insert
     capture = config['protein'].get('capture', {})
     optional = config['protein'].get('optional', [])
     re_proteins = [re.compile(format_string_to_capture_regex(
@@ -650,7 +507,8 @@ def mmseqs_prefilter(sample, simulate, field, mmseqs_max_seqs=10, verbose=False)
         seqs_to_map['query'] = [quick_translate(x) for x in seqs_to_map['query']]
         kmer = 6
     else:
-        kmer = 12
+        # what should this be?
+        kmer = 6
 
     write_fasta(filenames['map query'], seqs_to_map.dropna())
     make_mmseqs_db(filenames['map query'], aa, is_query=True)
@@ -667,6 +525,7 @@ def mmseqs_prefilter(sample, simulate, field, mmseqs_max_seqs=10, verbose=False)
         # without these flags, mmseqs will sometimes throw out exact matches
         '--comp-bias-corr', '0',
         '--mask', '0',
+        '--spaced-kmer-mode', '0',
         # '--exact-kmer-matching', '1', # prefilter only retains exact kmer matches
         )
         if verbose:
@@ -674,12 +533,13 @@ def mmseqs_prefilter(sample, simulate, field, mmseqs_max_seqs=10, verbose=False)
         result = subprocess.run(command, capture_output=True)
         # result = subprocess.run(command)
     if result.returncode != 0:
+    # if result.returncode != 0 or True:
         msg = '\n'.join([str(x) for x in 
             (result.args,
             result.stdout.decode(),
             result.stderr.decode())
             ])
-        raise ValueError('Non-zero return code in mmseqs prefilter')
+        raise ValueError(f'Non-zero return code in mmseqs prefilter:\n{msg}')
         
 
     # convert to tsv
@@ -753,7 +613,7 @@ def mmseqs_search(sample, field, simulate=False, min_seq_id=0.8) -> Candidates:
         filenames['map mmseqs result db'], 
         tmp,
         '--min-seq-id', str(min_seq_id),
-        '-k', str(kmer), # memory usage is 21**k * 8 bytes (protein) or 5**k * 8 bytes (Dna)
+        '-k', str(kmer), # memory usage is 21**k * 8 bytes (protein) or 5**k * 8 bytes (DNA)
         '-s', '1', # sensitivity, 1 is fastest, 7.5 is most sensitive
         '-c', '0.9', # minimum alignment coverage on query/target
         '--exact-kmer-matching', '1', # prefilter only retains exact kmer matches

@@ -1,6 +1,6 @@
 # 1. match the insert DNA
 left_adapter:  GATATACC # before MGS
-right_adapter: CTCGAGCA # after barcode
+right_adapter: CTCGAGCACCA # after barcode
 
 # 2. use regular expression to capture a part from the 
 #    insert DNA (adapters are removed)

@@ -15,4 +15,5 @@ dependencies:
   - python-slugify
   - pyyaml
   - regex
+  - seaborn
   - tqdm
