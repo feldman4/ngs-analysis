@@ -34,7 +34,7 @@ Run `ngs-analysis --help` to see available commands.
 1. Make an empty directory, add `config.yaml` and `samples.csv` based on the example.
 2. Add `reference_dna.csv` with anticipated DNA sequences (including adapters).
 3. Run `ngs-analysis setup`. Add `--clean` to start the analysis from scratch.
-4. Run `ngs-analysis dna_to_designs`. Check that `designs.csv` is accurate; if not, fix `config.yaml`.
+4. Check that `designs.csv` is accurate; if not, fix `config.yaml`.
 5. 
     - If you have paired-end data, put it in `0_paired_reads/` and run `ngs-analysis merge_read_pairs <sample>`.
     - If you have single-end data (e.g., nanopore), put it in `1_reads/`.
