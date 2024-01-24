@@ -53,14 +53,14 @@ def setup(clean=False):
     load_config()
 
     n = len(load_reference_dna())
-    print(f'Found {n} reference sequences in {reference_dna_table}')
+    print(f'Found {n:,} reference sequences in {reference_dna_table}')
 
     print(f'Converting reference sequences to design table...')
     dna_to_designs()
 
     # TODO: check that the input files exist
     n = len(load_samples())
-    print(f'Found {n} samples in {sample_table}')
+    print(f'Found {n:,} samples in {sample_table}')
 
     # TODO: check that mmseqs and ngmerge are on path
     if not shutil.which('mmseqs'):
@@ -195,7 +195,7 @@ def parse_reads(sample, simulate=False):
     config = load_config()
     filenames = get_filenames(sample, simulate)
     with Timer('', verbose='Loading reads...'):
-        reads = read_fastq(filenames['reads'])
+        reads = read_fastq_or_gz(filenames['reads'])
     with Timer('', verbose=f'Parsing {len(reads):,} reads...'):
         os.makedirs(os.path.dirname(filenames['parsed']), exist_ok=True)
         parse_sequences(config, reads).to_parquet(filenames['parsed'])
@@ -270,7 +270,12 @@ def map_parsed_reads(sample, simulate=False, mmseqs_max_seqs=10):
 def describe_parsed(df_parsed):
     df_parsed = df_parsed.copy()
     df_parsed[df_parsed == ''] = np.nan
-    dna_length = df_parsed.select_dtypes('object').map(len, na_action='ignore')
+    # pandas applymap was recently deprecated
+    if hasattr(df_parsed, 'map'):
+        dna_length = df_parsed.select_dtypes('object').map(len, na_action='ignore')
+    else:
+        dna_length = df_parsed.select_dtypes('object').applymap(len, na_action='ignore')
+
     aa_length = dna_length / 3
 
     null_summary = pd.concat([
@@ -467,6 +472,12 @@ def get_filenames(sample, simulate=False, field=None):
 
 
 ### MMSEQS
+
+def read_fastq_or_gz(filename):
+    if os.path.exists(filename):
+        return read_fastq(filename)
+    else:
+        return read_fastq(filename + '.gz')
 
 
 def mmseqs_make_design_db():

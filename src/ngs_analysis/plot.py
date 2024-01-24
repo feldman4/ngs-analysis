@@ -5,12 +5,12 @@ import matplotlib.pyplot as plt
 from .timer import Timer
 
 
-def plot_all(samples, output_prefix='figures/', fuzzy_distance=15):
+def plot_all(samples, output_prefix='figures/', fuzzy_distance=15, simulate=False):
 
     # TODO: add config parsing for plot options
 
     os.makedirs(os.path.dirname(output_prefix), exist_ok=True)
-    mapped_counts = prepare_mapped_counts(samples)
+    mapped_counts = prepare_mapped_counts(samples, simulate=simulate)
 
     df_ref = load_reference_dna()
     unique_names = df_ref['name'].drop_duplicates(keep=False)
@@ -89,8 +89,8 @@ def plot_abundances_by_sample(field, matches, output_prefix,
         matches.to_csv(f + '.csv', index=None)
 
 
-def prepare_mapped_counts(samples, minimum_distance=None):
-    df_mapped, fields = load_data_for_plotting(samples, simulate=True)
+def prepare_mapped_counts(samples, minimum_distance=None, simulate=False):
+    df_mapped, fields = load_data_for_plotting(samples, simulate=simulate)
 
     if minimum_distance is None:
         minimum_distance = {}
@@ -126,7 +126,7 @@ def heatmap_sample_vs_source(matches):
     
     padding = np.array([1, 1.5])
     scaling = np.array([0.5, 0.5])
-    figsize = padding + scaling * df_plot.shape
+    figsize = padding + scaling * df_plot.shape[::-1]
     fig, ax = plt.subplots(figsize=figsize)
     (df_plot
      .pipe(sns.heatmap, annot=True, xticklabels=True, yticklabels=True, 
@@ -143,9 +143,9 @@ def facet_abundances_by_sample(matches, source_counts):
     def plot(data, label, color):
         data = sorted(data['read_count'])[::-1]
         ax = plt.gca()
-        ax.plot(np.arange(len(data)) + 1, data, color=color, label=label, marker='.')
+        ax.plot(np.arange(len(data)) + 1, data, color=color, label=label)
         x = source_counts[label]
-        ax.plot([x, x], [1, 100], color=color, ls=':', label='# designs')
+        ax.plot([x, x], [1, max(data)], color=color, ls=':', label='# designs')
 
     hue_order = natsorted(set(matches['source']))
     row_order = natsorted(set(matches['sample']))
@@ -162,5 +162,6 @@ def facet_abundances_by_sample(matches, source_counts):
     for ax in fg.axes.flat[:]:
         ax.set_ylabel('Read count')
         ax.set_yscale('log')
+        ax.set_xscale('log')
         
     return fg.fig
