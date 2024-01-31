@@ -6,7 +6,7 @@ Convenient analysis of sequencing reads that span multiple DNA or protein parts.
 - How frequently is the same barcode linked to two different variants?
 - Which reads contain parts required for function (e.g., a kozak start sequence, or a fused protein tag)?
 
-This kind of analysis often involves parsing raw sequencing reads for DNA and/or protein sub-sequences (parts), then mapping the parts to a reference of anticipated part combinations. This package offers a simple workflow: 
+This kind of analysis often involves parsing raw sequencing reads for DNA and/or protein sub-sequences (parts), then mapping the parts to a reference of anticipated part combinations. Here the workflow is: 
 
 1. Define how to parse reads into parts using plain text expressions (no code)
 2. Run the parser on your anticipated DNA sequences to generate a reference
