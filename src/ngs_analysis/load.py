@@ -1,10 +1,11 @@
 import pandas as pd
+import pyarrow.parquet as pq
 import yaml
 
 from .constants import *
+from .sequence import quick_translate
 from .types import *
 from .utils import *
-from .sequence import quick_translate
 
 
 def load_config():
@@ -56,14 +57,26 @@ def load_designs() -> Designs:
     for field in fields:
         if field.endswith('_aa') and field[:-3] in df_designs:
             if field in df_designs:
-                raise ValueError(f'Cannot provide both Dna and amino acid for {field}')
-            df_designs[field] = [quick_translate(x) for x in df_designs[field[:-3]]]
+                raise ValueError(f'Cannot provide both DNA and amino acid for {field}')
+            df_designs[field] = translate_non_null(df_designs[field[:-3]])
         elif field not in df_designs:
             raise ValueError(f'Cannot derive {field} from design table')
     return df_designs.pipe(Designs)
 
 
+def translate_non_null(xs):
+    arr = []
+    for x in xs:
+        if pd.isnull(x):
+            arr += [None]
+        else:
+            arr += [quick_translate(x)]
+    return arr
+
+
 def load_seqs_to_map(sample, simulate, field):
+    """Returns dataframe with columns "read_index" and "query". Null values are dropped.
+    """
     filenames = get_filenames(sample, simulate, field)
 
     aa = field.endswith('_aa')
@@ -77,6 +90,13 @@ def load_seqs_to_map(sample, simulate, field):
         seqs_to_map['query'] = [quick_translate(x) for x in seqs_to_map['query']]
 
     return seqs_to_map
+
+
+def is_field_in_parsed(sample, simulate, field):
+    filenames = get_filenames(sample, simulate, field)
+    aa = field.endswith('_aa')
+    field_no_aa = field[:-3] if aa else field
+    return field_no_aa in pq.ParquetFile(filenames['parsed']).schema.names
 
 
 def get_filenames(sample, simulate=False, field=None):
@@ -145,7 +165,7 @@ def get_filenames(sample, simulate=False, field=None):
     return filenames
 
 
-def get_comparison_fields():
+def get_comparison_fields(filter_existing=None):
     """Parse fields for direct matching and field pairs for inferred matching.
     """
     direct_match, inferred_match = set(), set()
@@ -158,6 +178,11 @@ def get_comparison_fields():
         else:
             direct_match |= {c.strip()}
 
+    if filter_existing:
+        sample, simulate = filter_existing
+        ok = lambda x: is_field_in_parsed(sample, simulate, x)
+        direct_match = [x for x in direct_match if ok(x)]
+        inferred_match = [(a, b) for a,b in inferred_match if ok(a) and ok(b)]
     return direct_match, inferred_match
 
 

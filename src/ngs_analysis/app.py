@@ -91,7 +91,12 @@ def dna_to_designs():
     print(f'Wrote {n:,} rows to {design_table}')
 
 
-def simulate_single_reads(mutations_per_read: int=0, coverage=None):
+def clear_simulation():
+    files = glob('*/simulate/*')
+    [os.remove(x) for x in files]
+
+
+def simulate_single_reads(mutations_per_read: int=0, coverage=None, mutate_to_N=False):
     """Create simulated fastq files based on planned samples.
     """
     df_planned = load_sample_plan()
@@ -110,20 +115,15 @@ def simulate_single_reads(mutations_per_read: int=0, coverage=None):
             reads = pd.Series(reads).sample(frac=coverage, replace=True)
 
         if mutations_per_read != 0:
-            reads = mutate_reads(reads, mutations_per_read)
+            reads = mutate_reads(reads, mutations_per_read, mutate_to_N)
 
         f = f'1_reads/simulate/{sample}.fastq'
         write_fake_fastq(f, reads)
         print(f'Wrote {len(reads):,} single reads to {f}')
 
 
-def clear_simulation():
-    files = glob('*/simulate/*')
-    [os.remove(x) for x in files]
-
-
 def simulate_paired_reads(read_lengths: Tuple[int, int]=(300, 300), 
-        mutations_per_read: int=0, coverage=None):
+        mutations_per_read: int=0, coverage=None, mutate_to_N=False):
     """Create simulated fastq files based on planned samples.
 
     :param read_lengths: forward and reverse read lengths
@@ -145,8 +145,8 @@ def simulate_paired_reads(read_lengths: Tuple[int, int]=(300, 300),
             r2 = pd.Series(r2).sample(frac=coverage, replace=True)
 
         if mutations_per_read != 0:
-            r1 = mutate_reads(r1, mutations_per_read)
-            r2 = mutate_reads(r2, mutations_per_read)
+            r1 = mutate_reads(r1, mutations_per_read, mutate_to_N)
+            r2 = mutate_reads(r2, mutations_per_read, mutate_to_N)
 
         write_fake_fastq(f'0_paired_reads/simulate/{sample}_R1.fastq', r1)
         write_fake_fastq(f'0_paired_reads/simulate/{sample}_R2.fastq', r2)
@@ -154,13 +154,16 @@ def simulate_paired_reads(read_lengths: Tuple[int, int]=(300, 300),
               f'0_paired_reads/simulate/{sample}_R[12].fastq')
 
 
-def mutate_reads(reads, mutations_per_read, seed=0):
+def mutate_reads(reads, mutations_per_read, mutate_to_N, seed=0):
+    allowed = list('ACGT')
+    if mutate_to_N:
+        allowed += ['N']
     rs = np.random.RandomState(seed)
     arr = []
     for read in reads:
         mutant = str(read)
         for j in rs.randint(len(read), size=mutations_per_read):
-            mutant = mutant[:j - 1] + 'T' + mutant[j:]
+            mutant = mutant[:j - 1] + rs.choice(allowed) + mutant[j:]
         arr += [mutant]
     return arr
 
@@ -218,10 +221,15 @@ def map_parsed_reads(sample, simulate=False, mmseqs_max_seqs=10):
     # prepare mmseqs db
     mmseqs_make_design_db()
     
-    match_to_ngs, secondary = get_comparison_fields()
+    match_to_ngs, secondary = get_comparison_fields(filter_existing=(sample, simulate))
+    if len(match_to_ngs + secondary) == 0:
+        print(f'No comparison fields with parsed values available for sample {sample}, skipping')
+
     arr = []
     for field in match_to_ngs:
-
+        if not is_field_in_parsed(sample, simulate, field):
+            print(f'No sequences parsed for field {field}, skipping')
+            continue
         with Timer('', verbose=f'Searching for {field} candidates...'):
         # fastmap to get candidates
             df_mapped = mmseqs_prefilter(sample, simulate, field,
@@ -242,7 +250,7 @@ def map_parsed_reads(sample, simulate=False, mmseqs_max_seqs=10):
         for field_a, field_b in secondary:
             field = f'{field_b}_from_{field_a}'
             if '_aa' in field_b:
-                df_designs[field_b] = [quick_translate(x) for x in df_designs[field_b[:-3]]]
+                df_designs[field_b] = translate_non_null(df_designs[field_b[:-3]])
             name_to_field = df_designs.set_index('name')[field_b].to_dict()
             # define reference for field_b using field_a
             reference = (df_match
@@ -349,36 +357,11 @@ def parse_sequences(config, sequences):
                     name = name.rstrip('_') # collapse redundant names
                     start, end = match.span(i + 1)
                     entry[name] = entry['cds'][start*3:end*3]
-                # assert False
                 break
         arr += [entry]
     if len(arr) == 0:
         raise Exception('Nothing found')
     return pd.DataFrame(arr)
-
-
-def map_barcode(sample, simulate, field):
-    """Only exact matches, distance and equidistant not returned.
-    """
-    filenames = get_filenames(sample, simulate, field)
-
-    aa = field.endswith('_aa')
-    field_no_aa = field[:-3] if aa else field
-    seqs_to_map = pd.read_parquet(filenames['parsed'], columns=['read_index', field_no_aa])
-    if aa:
-        seqs_to_map[field] = [quick_translate(x) for x in seqs_to_map[field_no_aa]]
-        seqs_to_map = seqs_to_map[['read_index', field]]    
-    ref_seqs = (read_fasta(filenames['map mmseqs target fa'], as_df=True)
-    .rename(columns={'name': 'match', 'seq': 'reference'})
-    )
-
-    match = f'{field}_match'
-
-    return (seqs_to_map
-     .merge(ref_seqs, left_on=field, right_on='reference', how='left')
-     .rename(columns={'match': match})
-     [['read_index', match]]
-    )
 
 
 def match_mapped(df_mapped: Candidates, field):
@@ -509,19 +492,14 @@ def mmseqs_prefilter(sample, simulate, field, mmseqs_max_seqs=10, verbose=False)
     
     # make query database
     aa = field.endswith('_aa')
-    field_no_aa = field[:-3] if aa else field
-    seqs_to_map = (pd.read_parquet(filenames['parsed'], columns=['read_index', field_no_aa])
-     .dropna() # remove reads that failed parsing
-     .rename(columns={field_no_aa: 'query'})
-    )
+    seqs_to_map = load_seqs_to_map(sample, simulate, field)
     if aa:
-        seqs_to_map['query'] = [quick_translate(x) for x in seqs_to_map['query']]
         kmer = 6
     else:
         # what should this be?
         kmer = 6
 
-    write_fasta(filenames['map query'], seqs_to_map.dropna())
+    write_fasta(filenames['map query'], seqs_to_map)
     make_mmseqs_db(filenames['map query'], aa, is_query=True)
 
     # search
@@ -552,7 +530,6 @@ def mmseqs_prefilter(sample, simulate, field, mmseqs_max_seqs=10, verbose=False)
             ])
         raise ValueError(f'Non-zero return code in mmseqs prefilter:\n{msg}')
         
-
     # convert to tsv
     command = ('mmseqs', 'createtsv', 
     filenames['map mmseqs query db'], # query
@@ -602,16 +579,8 @@ def mmseqs_search(sample, field, simulate=False, min_seq_id=0.8) -> Candidates:
     
     # make query database
     aa = field.endswith('_aa')
-    field_no_aa = field[:-3] if aa else field
-    seqs_to_map = (pd.read_parquet(filenames['parsed'], columns=['read_index', field_no_aa])
-     .dropna() # remove reads that failed parsing
-     .rename(columns={field_no_aa: 'query'})
-    )
-    if aa:
-        seqs_to_map['query'] = [quick_translate(x) for x in seqs_to_map['query']]
-        kmer = MMSEQS_KMER_AA
-    else:
-        kmer = MMSEQS_KMER_DNA
+    seqs_to_map = load_seqs_to_map(sample, simulate, field)
+    kmer = MMSEQS_KMER_AA if aa else MMSEQS_KMER_DNA
     write_fasta(filenames['map query'], seqs_to_map.dropna())
     make_mmseqs_db(filenames['map query'], aa, is_query=True)
 
