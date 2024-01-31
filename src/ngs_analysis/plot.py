@@ -5,8 +5,10 @@ import matplotlib.pyplot as plt
 from .timer import Timer
 
 
-def plot_all(samples, output_prefix='figures/', fuzzy_distance=15, simulate=False):
-
+def plot_all(samples=None, output_prefix='figures/', fuzzy_distance=15, simulate=False):
+    if samples is None:
+        samples = load_samples()['sample']
+    
     # TODO: add config parsing for plot options
 
     os.makedirs(os.path.dirname(output_prefix), exist_ok=True)
@@ -22,7 +24,6 @@ def plot_all(samples, output_prefix='figures/', fuzzy_distance=15, simulate=Fals
         for field, matches in mapped_counts.items():
             plot_crossmapping(field, matches, output_prefix, 
                 unique_names)
-
         
             plot_abundances_by_sample(field, matches, 
                 output_prefix, df_ref)
