@@ -629,23 +629,6 @@ def mmseqs_search(sample, field, simulate=False, min_seq_id=0.8) -> Candidates:
     return df_mmseqs.merge(seqs_to_map).merge(ref_seqs).pipe(Candidates)
 
 
-def load_fastmap(filename):
-    """A bit slow, 10% of fastmap runtime
-    """
-    txt = open(filename).read()
-    queries = txt.strip().split('//')
-    arr = []
-    for q in queries[:-1]:
-        if not q:
-            continue
-        lines = q.strip().split('\n')
-
-        name = lines[0].split()[1]
-        for x in set([l.split()[-1].split(':')[0] for l in lines[1:]]):
-            arr += [{'query': name, 'match': x}]
-    return pd.DataFrame(arr)
-
-
 def create_directories():
     for d in working_directories:
         os.makedirs(f'{d}/simulate', exist_ok=True)
