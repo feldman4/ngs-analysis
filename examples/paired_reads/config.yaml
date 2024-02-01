@@ -21,11 +21,12 @@ protein:
     GS_linker: '[GS]{3,}' # 3 or more G or S
     minibinder: '.*' # any amino acid sequence
 
-# list part names to compare to reference
-# use the "_aa" suffix to compare protein translations
-# the format "barcode -> minibinder_aa" means first match by
+# 5. Compare listed part names to reference.
+# Use the "_aa" suffix to compare protein translations.
+# The format "barcode -> minibinder_aa" means first match by
 # barcode, then compare the corresponding minibinder in the 
-# reference to the parsed minibinder sequence
+# reference to the parsed minibinder sequence at the amino
+# acid level.
 compare:
   - barcode
   - minibinder_aa
