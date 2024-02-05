@@ -41,6 +41,22 @@ Run `ngs-analysis --help` to see available commands.
 6. Run `ngs-analysis parse_reads <sample>`. Check that `2_parsed/<sample>.parsed.pq` looks alright (with pandas, use `pd.read_parquet`)
 7. Run `ngs-analysis map_parsed_reads <sample>`. Results are in `3_mapped/<sample>.mapped.csv`
 
+# Simulation mode
+
+Debugging complex read structures and experimental layouts can be tricky. For example, `config.yaml` might parse reference sequences incorrectly, or samples might map to multiple reference subpools in an unexpected way. Before running an analysis (or designing an experiment), you can simulate the results by defining `sample_plan.csv` and running `simulate_single_reads` or `simulate_paired_reads`, which have options to add simple random mutations and variable coverage per subpool.
+
+Here's the sample plan from the [paired read example](examples/paired_reads/sample_plan.csv):
+
+| sample | source | coverage |
+| --- | --- | --- |
+|   2   | sample\_A | pool1 | 50 |
+|   3   | sample\_B | pool2 | 50 |
+|   4   | sample\_C | pool1 | 50 |
+|   5   | sample\_C | pool2 | 20 |
+|   6   | sample\_D | pool3 | 50 |
+
+To analyze the simulated data, just add the `--simulate` flag to `merge_read_pairs`, `parse_reads`, and `map_parsed_reads`. Results will be saved to `{step}/simulate/{sample}` rather than `{step}/{sample}`.
+
 
 # Install
 
