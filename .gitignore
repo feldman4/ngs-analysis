@@ -4,6 +4,7 @@ examples/paired_reads/*
 !examples/paired_reads/config.yaml
 !examples/paired_reads/reference_dna.csv
 !examples/paired_reads/samples.csv
+!examples/paired_reads/sample_plan.csv
 !examples/paired_reads/planned_dna.csv
 !examples/paired_reads/pattern*.png
 !examples/paired_reads/paired_read_example.ipynb

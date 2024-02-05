@@ -75,6 +75,9 @@ def dna_to_designs():
     """
     df_reference = load_reference_dna()
     config = load_config()
+    config['left_adapter'] = config.get('left_adapter_reference', config['left_adapter'])
+    config['right_adapter'] = config.get('right_adapter_reference', config['right_adapter'])
+
     parsed = (parse_sequences(config, df_reference['reference_dna'])
      .drop('read_index', axis=1))
     m, n = len(parsed), len(df_reference)

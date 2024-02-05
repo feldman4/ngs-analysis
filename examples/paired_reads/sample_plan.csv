@@ -1,0 +1,6 @@
+sample,source,coverage
+sample_A,pool1,50
+sample_B,pool2,50
+sample_C,pool1,50
+sample_C,pool2,20
+sample_D,pool3,50
