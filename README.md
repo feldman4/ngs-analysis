@@ -49,11 +49,11 @@ Here's the sample plan from the [paired read example](examples/paired_reads/samp
 
 | sample | source | coverage |
 | --- | --- | --- |
-|   2   | sample\_A | pool1 | 50 |
-|   3   | sample\_B | pool2 | 50 |
-|   4   | sample\_C | pool1 | 50 |
-|   5   | sample\_C | pool2 | 20 |
-|   6   | sample\_D | pool3 | 50 |
+|  sample\_A | pool1 | 50 |
+|  sample\_B | pool2 | 50 |
+|  sample\_C | pool1 | 50 |
+|  sample\_C | pool2 | 20 |
+|  sample\_D | pool3 | 50 |
 
 To analyze the simulated data, just add the `--simulate` flag to `merge_read_pairs`, `parse_reads`, and `map_parsed_reads`. Results will be saved to `{step}/simulate/{sample}` rather than `{step}/{sample}`.
 
