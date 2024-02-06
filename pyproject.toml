@@ -1,6 +1,6 @@
 [project]
 name = "ngs-analysis"
-version = "0.0.4"
+version = "0.0.5"
 description = "Analyze deep sequencing of complex libraries"
 authors = [
   { name="David Feldman" },
