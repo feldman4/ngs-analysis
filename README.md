@@ -9,7 +9,7 @@ Convenient analysis of sequencing reads that span multiple DNA or protein parts.
 This kind of analysis often involves parsing raw sequencing reads for DNA and/or protein sub-sequences (parts), then mapping the parts to a reference of anticipated part combinations. Here the workflow is: 
 
 1. Define how to parse reads into parts using plain text expressions (no code)
-2. Run the parser on your anticipated DNA sequences to generate a reference
+2. Parse your anticipated DNA sequences to generate a reference
 3. Parse a batch of sequencing samples
 4. Map the parts found in each read to the reference
 
