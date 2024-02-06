@@ -9,7 +9,7 @@ Convenient analysis of sequencing reads that span multiple DNA or protein parts.
 This kind of analysis often involves parsing raw sequencing reads for DNA and/or protein sub-sequences (parts), then mapping the parts to a reference of anticipated part combinations. Here the workflow is: 
 
 1. Define how to parse reads into parts using plain text expressions (no code)
-2. Run the parser on your anticipated DNA sequences to generate a reference
+2. Parse your anticipated DNA sequences to generate a reference
 3. Parse a batch of sequencing samples
 4. Map the parts found in each read to the reference
 
@@ -40,6 +40,24 @@ Run `ngs-analysis --help` to see available commands.
     - If you have single-end data (e.g., nanopore), put it in `1_reads/`.
 6. Run `ngs-analysis parse_reads <sample>`. Check that `2_parsed/<sample>.parsed.pq` looks alright (with pandas, use `pd.read_parquet`)
 7. Run `ngs-analysis map_parsed_reads <sample>`. Results are in `3_mapped/<sample>.mapped.csv`
+
+# Simulation mode
+
+Debugging complex read structures and experimental layouts can be tricky. For example, your `config.yaml` might parse reference sequences incorrectly, or samples might map to the reference in an unexpected way (e.g., if the same barcode is attached to different variants). 
+
+Before running an analysis (or designing an experiment), you can simulate the results by defining `sample_plan.csv` and running `simulate_single_reads` or `simulate_paired_reads`, which have options to add simple random mutations and variable coverage per subpool.
+
+Here's `sample_plan.csv` from the [paired read example](examples/paired_reads/sample_plan.csv). Note that "source" refers to the optional "source" column in `reference_DNA.csv`.
+
+| sample | source | coverage |
+| --- | --- | --- |
+|  sample\_A | pool1 | 50 |
+|  sample\_B | pool2 | 50 |
+|  sample\_C | pool1 | 50 |
+|  sample\_C | pool2 | 20 |
+|  sample\_D | pool3 | 50 |
+
+To analyze the simulated data, just add the `--simulate` flag to `merge_read_pairs`, `parse_reads`, `map_parsed_reads`, and `plot`. Results will be saved to `{step}/simulate/{sample}` rather than `{step}/{sample}`.
 
 
 # Install
