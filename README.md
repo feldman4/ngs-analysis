@@ -43,9 +43,11 @@ Run `ngs-analysis --help` to see available commands.
 
 # Simulation mode
 
-Debugging complex read structures and experimental layouts can be tricky. For example, `config.yaml` might parse reference sequences incorrectly, or samples might map to the reference in an unexpected way (e.g., if the same sequence is present but from different sources). Before running an analysis (or designing an experiment), you can simulate the results by defining `sample_plan.csv` and running `simulate_single_reads` or `simulate_paired_reads`, which have options to add simple random mutations and variable coverage per subpool.
+Debugging complex read structures and experimental layouts can be tricky. For example, your `config.yaml` might parse reference sequences incorrectly, or samples might map to the reference in an unexpected way (e.g., if the same barcode is attached to different variants). 
 
-Here's the sample plan from the [paired read example](examples/paired_reads/sample_plan.csv). Note that "source" refers to 
+Before running an analysis (or designing an experiment), you can simulate the results by defining `sample_plan.csv` and running `simulate_single_reads` or `simulate_paired_reads`, which have options to add simple random mutations and variable coverage per subpool.
+
+Here's `sample_plan.csv` from the [paired read example](examples/paired_reads/sample_plan.csv). Note that "source" refers to the optional "source" column in `reference_DNA.csv`.
 
 | sample | source | coverage |
 | --- | --- | --- |
