@@ -15,7 +15,7 @@ class ReferenceDna(pa.DataFrameModel):
 # could also be used to generate comparison of expected vs actual results 
 class SamplePlan(pa.DataFrameModel):
     sample: Series[str] = pa.Field(nullable=False, coerce=True)
-    source: Optional[Series[str]] = pa.Field(nullable=False, coerce=True)
+    source: Series[str] = pa.Field(nullable=False, coerce=True)
     coverage: Optional[Series[float]] = pa.Field(nullable=False, coerce=True)
 
 

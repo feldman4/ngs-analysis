@@ -98,7 +98,9 @@ def format_fake_fastq(list_or_records):
     return '\n'.join(lines)
 
 
-def write_fastq(filename, names, sequences, quality_scores):
+def write_fastq(filename, names, sequences, quality_scores=None):
+    if quality_scores is None:
+        quality_scores = ['G' * len(x) for x in sequences]
     with open(filename, 'w') as fh:
         fh.write(format_fastq(names, sequences, quality_scores))
 

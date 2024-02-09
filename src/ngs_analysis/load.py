@@ -3,7 +3,7 @@ import pyarrow.parquet as pq
 import yaml
 
 from .constants import *
-from .sequence import quick_translate
+from .sequence import quick_translate, read_fastq
 from .types import *
 from .utils import *
 
@@ -203,4 +203,19 @@ def load_data_for_plotting(samples, simulate=False):
 
 def reference_contains_source():
     return 'source' in pd.read_csv(reference_dna_table, nrows=1)
+
+
+def load_fastq(samples):
+    # load fastq data
+    arr = []
+    for sample in samples:
+        reads, quality, names = read_fastq(
+            f'1_reads/{sample}.fastq', include_quality=True, 
+            include_name=True, full_name=True)
+        (pd.DataFrame({'read': reads, 'name': names, 'quality': quality})
+         .assign(read_index=lambda x: np.arange(len(x)))
+         .assign(sample=sample)
+         .pipe(arr.append)
+        )
+    return pd.concat(arr)
 

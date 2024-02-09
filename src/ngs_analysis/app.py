@@ -25,8 +25,9 @@ from .sequence import (read_fasta, read_fastq, reverse_complement,
                        write_fake_fastq, write_fasta)
 from .timer import Timer
 from .types import *
-from .utils import assert_unique, nglob, sample_at_coverage
+from .utils import nglob
 from .load import *
+from .nanopore import setup_from_nanopore_fastqs, demux_reads, write_flye_commands, collect_assemblies
 
 
 ### MAIN STEPS
@@ -326,8 +327,10 @@ def parse_sequences(config, sequences):
     re_insert = re.compile('{left_adapter}(.*){right_adapter}'.format(**config))
     capture = config['protein'].get('capture', {})
     optional = config['protein'].get('optional', [])
-    re_proteins = [re.compile(format_string_to_capture_regex(
-        x, optional, **capture)) for x in config['protein']['patterns']]
+    if 'protein' in config:
+
+        re_proteins = [re.compile(format_string_to_capture_regex(
+            x, optional, **capture)) for x in config['protein']['patterns']]
     
     arr = []
     for i, dna in enumerate(sequences):
@@ -344,7 +347,8 @@ def parse_sequences(config, sequences):
             m = re.findall(pat, insert)
             if m:
                 entry[name] = m[0]
-        
+        if 'protein' not in config:
+            continue
         protein_start = re.search(config['protein']['start_at'], insert)
         if protein_start is None:
             continue
@@ -376,13 +380,18 @@ def match_mapped(df_mapped: Candidates, field):
     distance = f'{field}_distance'
     equidistant = f'{field}_match_equidistant'
 
-    df_mapped = df_mapped.copy()
+    # the reference is deduplicated in mmseqs_make_design_db, so 
+    # we have to track counts separately
+    f = f'3_mapped/map/{field}.counts.csv'
+    counts = pd.read_csv(f).rename(columns={'name': 'reference_name'})
+
+    df_mapped = df_mapped.merge(counts)
     df_mapped[distance] = [Levenshtein.distance(a,b) for a,b in df_mapped[['query', 'reference']].values]
     # keep only the minimum values
     min_distance = df_mapped.groupby('read_index')[distance].transform('min')
     df_mapped = df_mapped.loc[lambda x: x[distance] == min_distance]
 
-    A = df_mapped.groupby('read_index').size().rename(equidistant).reset_index()
+    A = df_mapped.groupby('read_index')['count'].sum().rename(equidistant).reset_index()
     B = (df_mapped.sort_values(distance).drop_duplicates('read_index')
      .rename(columns={'reference_name': match})[['read_index', match, distance]])
     return A.merge(B)[['read_index', match, distance, equidistant]]
@@ -473,9 +482,15 @@ def mmseqs_make_design_db():
         for field in fields:
             aa = field.endswith('_aa')
             f = f'3_mapped/map/{field}.fa' # should live in get_filenames
-            seqs_to_index = df_designs[['name', field]]
-            write_fasta(f, seqs_to_index.drop_duplicates(field))
+            seqs_to_index = (df_designs[['name', field]]
+             .assign(count=lambda x: x.groupby(field).transform('size'))
+             .drop_duplicates(field)
+            )
+            write_fasta(f, seqs_to_index[['name', field]])
             make_mmseqs_db(f, aa, is_query=False)
+
+            f = f'3_mapped/map/{field}.counts.csv'
+            seqs_to_index[['name', 'count']].to_csv(f, index=None)
 
 
 def make_mmseqs_db(fasta_file, dbtype_is_amino_acid, is_query):
@@ -646,6 +661,8 @@ def main():
         'merge_read_pairs', 
         'parse_reads',
         'map_parsed_reads',
+        'setup_from_nanopore_fastqs',
+        'demux_reads',
     ]
     # if the command name is different from the function name
     named = {
