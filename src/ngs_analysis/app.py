@@ -21,13 +21,14 @@ import pandas as pd
 
 # import quickdna
 from .constants import *
+from .load import *
+from .nanopore import (collect_assemblies, demux_reads,
+                       setup_from_nanopore_fastqs, write_flye_commands)
 from .sequence import (read_fasta, read_fastq, reverse_complement,
                        write_fake_fastq, write_fasta)
 from .timer import Timer
 from .types import *
 from .utils import nglob
-from .load import *
-from .nanopore import setup_from_nanopore_fastqs, demux_reads, write_flye_commands, collect_assemblies
 
 
 ### MAIN STEPS
