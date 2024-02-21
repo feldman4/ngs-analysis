@@ -209,7 +209,7 @@ def parse_reads(sample, simulate=False):
         parse_sequences(config, reads).to_parquet(filenames['parsed'])
     
 
-def map_parsed_reads(sample, simulate=False, mmseqs_max_seqs=10):
+def map_parsed_reads(sample, simulate=False, mmseqs_max_seqs=10, drop_unmapped=True):
     """For each read, find nearest match for the requested fields. 
     
     Candidate matches from the design table are found via mmseqs search, 
@@ -220,6 +220,9 @@ def map_parsed_reads(sample, simulate=False, mmseqs_max_seqs=10):
 
     :param sample: sample name
     :param simulate: if True, use ./*/simulate/ subdirectories
+    :param drop_unmapped: whether to drop reads that fail to map to all
+        of the requested fields, if not dropping then the mapped table
+        may contain null entries
     """
     filenames = get_filenames(sample, simulate)
 
@@ -245,9 +248,10 @@ def map_parsed_reads(sample, simulate=False, mmseqs_max_seqs=10):
             df_match = match_mapped(df_mapped, field)
         arr += [df_match]
 
+    join = 'inner' if drop_unmapped else 'outer'
     df_match = arr[0]
     for df in arr[1:]:
-        df_match = df_match.merge(df, on='read_index')
+        df_match = df_match.merge(df, on='read_index', how=join)
 
     if secondary:
         df_designs = load_designs()
@@ -325,22 +329,25 @@ def parse_sequences(config, sequences):
     Finally, the protein is matched using the template string protein.pattern,
     and named matches are added to the result dictionary. Only DNA is stored here.
     """
-    re_insert = re.compile('{left_adapter}(.*){right_adapter}'.format(**config))
+    re_insert = re.compile('{left_adapter}(.*?){right_adapter}'.format(**config))
     capture = config['protein'].get('capture', {})
     optional = config['protein'].get('optional', [])
     if 'protein' in config:
-
         re_proteins = [re.compile(format_string_to_capture_regex(
             x, optional, **capture)) for x in config['protein']['patterns']]
     
     arr = []
     for i, dna in enumerate(sequences):
         dna = dna.upper()
-        entry = {}
-        try:
-            insert = re_insert.findall(dna)[0]
-        except IndexError:
+        entry = {'sense': 1}
+        matches = re_insert.findall(dna)
+        if len(matches) == 0:
+            matches = re_insert.findall(reverse_complement(dna))
+            entry['sense'] = -1
+        if len(matches) == 0:
             continue
+        insert = matches[0]
+
         entry['read_index'] = i
         entry['read_length'] = len(dna)
         entry['insert_length'] = len(insert)

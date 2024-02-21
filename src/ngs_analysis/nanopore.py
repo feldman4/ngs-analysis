@@ -11,7 +11,7 @@ import shutil
 
 
 def setup_from_nanopore_fastqs(path_to_fastq_pass, min_reads=10, 
-        exclude='unclassified', write_sample_table=True):
+        exclude='unclassified', include=None, write_sample_table=True):
     """Set up analysis from fastq.gz files produced by dorado
     basecalling and barcode demultiplexing.
 
@@ -27,8 +27,14 @@ def setup_from_nanopore_fastqs(path_to_fastq_pass, min_reads=10,
     :param write_sample_table: write "samples.csv"
     """
     search = os.path.join(path_to_fastq_pass, '*')
-    folders = [x for x in nglob(search) 
-               if os.path.isdir(x) and not re.findall(exclude, x)]
+    folders = []
+    for x in nglob(search):
+        if not os.path.isdir(x) or re.findall(exclude, x):
+            continue
+        if include is not None and not re.findall(include, x):
+            continue
+        folders += [x]
+
     samples = []
     # combine nanopore output fastq files    
     for folder in folders:
@@ -60,7 +66,7 @@ def setup_from_nanopore_fastqs(path_to_fastq_pass, min_reads=10,
          .to_csv('samples.csv', index=None))
 
     
-def demux_reads():
+def demux_reads(flye='flye'):
     shutil.rmtree('4_demux', ignore_errors=True)
     os.makedirs('4_demux')
     print('Cleared files from 4_demux/')
@@ -95,10 +101,10 @@ def demux_reads():
     
     print(f'Wrote {num_files} files to 4_demux/{{sample}}/{{name}}.fastq')
 
-    write_flye_commands()
+    write_flye_commands(flye=flye)
 
 
-def write_flye_commands(search='4_demux/*/*.fastq', flags='--nano-hq'):
+def write_flye_commands(search='4_demux/*/*.fastq', flags='--nano-hq', flye='flye'):
     """Write commands that can be run with bash, parallel, job submission etc.
     """
     f_out = '4_demux/flye.sh'
@@ -107,7 +113,7 @@ def write_flye_commands(search='4_demux/*/*.fastq', flags='--nano-hq'):
     arr = []
     for fastq in nglob(search):
         out_dir = fastq.replace(".fastq", "")
-        arr += [f'flye {flags} {fastq} --out-dir {out_dir}']
+        arr += [f'{flye} {flags} {fastq} --out-dir {out_dir}']
     with open(f_out, 'w') as fh:
         fh.write('\n'.join(arr))
     print(f'Wrote {len(arr)} commands to {f_out}')
