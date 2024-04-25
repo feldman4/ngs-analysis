@@ -1,13 +1,15 @@
 import gzip
-import pandas as pd
 import os
-from .load import load_config, load_fastq, load_samples
-from .utils import nglob, csv_frame, assign_format
-from .timer import Timer
-from .types import Samples
-from .sequence import reverse_complement, write_fastq, read_fasta
 import re
 import shutil
+
+import pandas as pd
+
+from .load import load_config, load_fastq, load_samples
+from .sequence import read_fasta, reverse_complement, write_fastq
+from .timer import Timer
+from .types import Samples
+from .utils import assign_format, csv_frame, nglob
 
 
 def setup_from_nanopore_fastqs(path_to_fastq_pass, min_reads=10, 
@@ -24,22 +26,33 @@ def setup_from_nanopore_fastqs(path_to_fastq_pass, min_reads=10,
         barcode
     :param min_reads: skip barcodes with fewer reads
     :param exclude: skip barcodes (folders) matching this regex
+    :param include: only include barcodes (folders) matching this regex
     :param write_sample_table: write "samples.csv"
     """
     search = os.path.join(path_to_fastq_pass, '*')
     folders = []
     for x in nglob(search):
-        if not os.path.isdir(x) or re.findall(exclude, x):
+        name = os.path.basename(x)
+        if not os.path.isdir(x) or re.findall(exclude, name):
             continue
-        if include is not None and not re.findall(include, x):
+        if include is not None and not re.findall(include, name):
             continue
+        print(x)
         folders += [x]
-
+    
+    if not write_sample_table:
+        name_to_sample = load_samples().set_index('fastq_name')['sample'].to_dict()
+        
     samples = []
     # combine nanopore output fastq files    
     for folder in folders:
         name = os.path.basename(folder)
         files = nglob(f'{folder}/*.fastq.gz')
+
+        if write_sample_table:
+            sample = name
+        else:
+            sample = name_to_sample[name]
 
         num_reads = 0
         arr = []
@@ -54,12 +67,13 @@ def setup_from_nanopore_fastqs(path_to_fastq_pass, min_reads=10,
             print(f'Skipping {name}, only detected {num_reads} reads')
             continue
 
-        print(f'Wrote 1_reads/{name}.fastq with {num_reads} reads '
+        print(f'Wrote 1_reads/{sample}.fastq with {num_reads} reads '
               f'from {len(files)} .fastq.gz files')
-        with open(f'1_reads/{name}.fastq', 'w') as fh:
+        with open(f'1_reads/{sample}.fastq', 'w') as fh:
             fh.write(''.join(arr))
             
-        samples += [name]
+        samples += [sample]
+
     if write_sample_table:
         (pd.DataFrame({'fastq_name': samples, 'sample': samples})
          .pipe(Samples)
@@ -73,6 +87,7 @@ def demux_reads(flye='flye'):
 
     c = load_config()['demux']
     max_reads_per_assembly = c.get('max_reads_per_assembly', 500)
+    min_reads_per_assembly = c.get('min_reads_per_assembly', 0)
     
     # filter and sort reads based on this table
     with Timer(verbose='Loading mapped reads...'):
@@ -84,15 +99,17 @@ def demux_reads(flye='flye'):
     key = ['sample', 'read_index']
     df = (df_parsed
      .merge(df_mapped, on=key)
-     .merge(df_fastq, on=key)
      .query(c['gate'])
-     .pipe(assign_format, fastq_text='{name}\n{read}\n+\n{quality}')
      .groupby(['sample', c['field']])
-     .head(max_reads_per_assembly)
+      .head(max_reads_per_assembly)
+     .merge(df_fastq, on=key)
+     .pipe(assign_format, fastq_text='{name}\n{read}\n+\n{quality}')
     )
     
     num_files = 0
     for (sample, name), df_ in df.groupby(['sample', c['field']]):
+        if df_.shape[0] < min_reads_per_assembly:
+            continue
         f = f'4_demux/{sample}/{name}.fastq'
         os.makedirs(os.path.dirname(f), exist_ok=True)
         with open(f, 'w') as fh:

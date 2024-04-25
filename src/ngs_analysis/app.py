@@ -332,10 +332,13 @@ def parse_sequences(config, sequences):
     re_insert = re.compile('{left_adapter}(.*?){right_adapter}'.format(**config))
     capture = config['protein'].get('capture', {})
     optional = config['protein'].get('optional', [])
-    if 'protein' in config:
+    try:
+        patterns = config['protein']['patterns']
         re_proteins = [re.compile(format_string_to_capture_regex(
-            x, optional, **capture)) for x in config['protein']['patterns']]
-    
+            x, optional, **capture)) for x in patterns]
+    except KeyError:
+        re_proteins = []
+
     arr = []
     for i, dna in enumerate(sequences):
         dna = dna.upper()
